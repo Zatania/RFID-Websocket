@@ -14,7 +14,7 @@ const char* password = "{replace}"; // --> Change to wifi password
 
 const char* computer_ip_address = "{replace}"; // --> Change to computer's ip address
 const int port = 4000;
-const char* path = "/";
+const char* path = "/user";
 
 int readsuccess;
 byte readcard[4];
