@@ -7,7 +7,11 @@ const db = require('./database');
 
 const app = express();
 const server = http.createServer(app);
-const socket = new WebSocket.Server({ server });
+
+// Create separate WebSocket servers for vehicle and user
+const vehicleWSS = new WebSocket.Server({ noServer: true });
+const userWSS = new WebSocket.Server({ noServer: true });
+
 const PORT = 4000;
 
 dns.lookup(os.hostname(), { family: 4 }, (err, add) => {
@@ -54,24 +58,82 @@ const checkVehicleStatuses = async () => {
 setInterval(checkVehicleStatuses, 6 * 60 * 60 * 1000);
 /* setInterval(checkVehicleStatuses, 60000); */ //for testing
 
-// WebSocket connection handling
-socket.on('connection', (ws, req) => {
+// Store connected clients
+const vehicleClients = [];
+const userClients = [];
+
+// Handle vehicle WebSocket connections
+vehicleWSS.on('connection', (ws, req) => {
   const ip = req.socket.remoteAddress.startsWith('::ffff:') ? req.socket.remoteAddress.slice(7) : req.socket.remoteAddress;
-  console.log(`${ip} connected to server`);
+  console.log(`${ip} connected to /vehicle WebSocket`);
+
+  // Add new client to the array
+  vehicleClients.push(ws);
 
   ws.on('message', message => {
-    console.log(`Received: ${message}`);
-    socket.clients.forEach(client => {
-      if (client !== ws && client.readyState === WebSocket.OPEN) {
+    console.log(`[Vehicle] Received: ${message}`);
+    // Broadcast the received message to all connected vehicle clients
+    vehicleClients.forEach(client => {
+      if (client.readyState === WebSocket.OPEN) {
         client.send(`${message}`);
       }
     });
-    ws.send(`${message}`);
   });
 
   ws.on('close', () => {
-    console.log(`${ip} disconnected from server`);
+    console.log(`${ip} disconnected from /vehicle WebSocket`);
+    // Remove client from the array
+    const index = vehicleClients.indexOf(ws);
+    if (index > -1) {
+      vehicleClients.splice(index, 1);
+    }
   });
+});
+
+// Handle user WebSocket connections
+userWSS.on('connection', (ws, req) => {
+  const ip = req.socket.remoteAddress.startsWith('::ffff:') ? req.socket.remoteAddress.slice(7) : req.socket.remoteAddress;
+  console.log(`${ip} connected to /user WebSocket`);
+
+  // Add new client to the array
+  userClients.push(ws);
+
+  ws.on('message', message => {
+    console.log(`[User] Received: ${message}`);
+    // Broadcast the received message to all connected user clients
+    userClients.forEach(client => {
+      if (client.readyState === WebSocket.OPEN) {
+        client.send(`${message}`);
+      }
+    });
+  });
+
+  ws.on('close', () => {
+    console.log(`${ip} disconnected from /user WebSocket`);
+    // Remove client from the array
+    const index = userClients.indexOf(ws);
+    if (index > -1) {
+      userClients.splice(index, 1);
+    }
+  });
+});
+
+
+// Upgrade HTTP connections to WebSocket based on the URL path
+server.on('upgrade', (request, socket, head) => {
+  const pathname = request.url;
+
+  if (pathname === '/vehicle') {
+    vehicleWSS.handleUpgrade(request, socket, head, (ws) => {
+      vehicleWSS.emit('connection', ws, request);
+    });
+  } else if (pathname === '/user') {
+    userWSS.handleUpgrade(request, socket, head, (ws) => {
+      userWSS.emit('connection', ws, request);
+    });
+  } else {
+    socket.destroy();
+  }
 });
 
 server.listen(PORT, () => console.log(`Server running on port ${PORT}`));
