@@ -3,8 +3,8 @@
 #include <MFRC522.h>
 #include <WebSocketsClient.h>
 
-#define SS_PIN D2  //--> SDA / SS is connected to pinout D2
-#define RST_PIN D1  //--> RST is connected to pinout D1
+#define SS_PIN D8  //--> SDA / SS is connected to pinout D2
+#define RST_PIN D3  //--> RST is connected to pinout D1
 MFRC522 mfrc522(SS_PIN, RST_PIN);  //--> Create MFRC522 instance.
 
 #define ON_Board_LED 2  //--> Defining an On Board LED, used for indicators when the process of connecting to a wifi router
