@@ -71,10 +71,10 @@ void loop() {
 
     // Convert the buffer to hex data
     String hexData = "";
-    for (int i = 0; i < bufferSize; i++) {
+    for (int i = 10; i < bufferSize; i++) { // Adjust index range for desired bytes
       if ((uint8_t)buffer[i] < 0x10) hexData += "0"; // Add leading zero for single digit
       hexData += String((uint8_t)buffer[i], HEX); // Append hex byte to string
-      if (i < bufferSize - 1) hexData += "";
+      if (i < bufferSize - 1) hexData += ""; // Add space between bytes (except the last one)
     }
 
     // Print and send the hex data
