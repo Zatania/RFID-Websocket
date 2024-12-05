@@ -5,6 +5,7 @@ const dns = require('dns');
 const os = require('os');
 const db = require('./database');
 const schedule = require('node-schedule');
+const dayjs = require('dayjs');
 
 const app = express();
 const server = http.createServer(app);
@@ -12,6 +13,10 @@ const server = http.createServer(app);
 // Create separate WebSocket servers for vehicle and user
 const vehicleWSS = new WebSocket.Server({ noServer: true });
 const userWSS = new WebSocket.Server({ noServer: true });
+
+// create WebSocket server for real time logs
+const logsWSS = new WebSocket.Server({ noServer: true });
+const realtimeWSS = new WebSocket.Server({ noServer: true });
 
 const PORT = 4000;
 
@@ -110,10 +115,13 @@ const checkVehicleStatuses = async () => {
 
           // Insert notifications, ensuring daily notifications for "Expiring Soon"
           const [existingNotifications] = await db.query(
-            `SELECT * FROM notifications 
-            WHERE phone_number = ? 
-            AND message = ? 
-            AND DATE(created_at) = CURDATE()`,
+            `
+              SELECT * 
+              FROM notifications 
+              WHERE phone_number = ? 
+              AND message = ? 
+              AND DATE(created_at) = CURDATE()
+            `,
             [phone_number, messages[newStatus]]
           );
 
@@ -279,7 +287,7 @@ userWSS.on('connection', (ws, req) => {
   userClients.push(ws);
 
   // Start the notification check every minute for this user
-  setInterval(() => checkNotifications(ws), 30000); // Check every minute
+  setInterval(() => checkNotifications(ws), 60000); // Check every minute
 
   ws.on('message', message => {
     console.log(`[User] Received: ${message}`);
@@ -301,6 +309,216 @@ userWSS.on('connection', (ws, req) => {
   });
 });
 
+// Function to fetch logs from the database
+const fetchLogs = async () => {
+  try {
+    const query = `
+      SELECT
+        pl.id AS log_id,
+        ph.id AS history_id,
+        CONCAT(a.first_name, ' ', a.last_name) as account_name,
+        pl.action,
+        pl.created_at
+      FROM user_parking_logs pl
+      JOIN user_parking_history ph ON pl.history_id = ph.id
+      JOIN users a ON ph.user_id = a.id
+      WHERE DATE(pl.created_at) = CURDATE()
+
+      UNION ALL
+
+      SELECT
+        pl.id AS log_id,
+        ph.id AS history_id,
+        CONCAT(a.first_name, ' ', a.last_name) AS account_name,
+        pl.action,
+        pl.created_at
+      FROM premium_parking_logs pl
+      JOIN premium_parking_history ph ON pl.history_id = ph.id
+      JOIN premiums a ON ph.premium_id = a.id
+      WHERE DATE(pl.created_at) = CURDATE()
+
+      UNION ALL
+
+      SELECT
+        pl.id AS log_id,
+        ph.id AS history_id,
+        CONCAT(a.first_name, ' ', a.last_name) AS account_name,
+        pl.action,
+        pl.created_at
+      FROM visitor_parking_logs pl
+      JOIN visitor_parking_history ph ON pl.history_id = ph.id
+      JOIN visitors a ON ph.visitor_id = a.id
+      WHERE DATE(pl.created_at) = CURDATE()
+
+      ORDER BY created_at DESC;
+    `;
+
+    const [logs] = await db.query(query);
+
+    // Format `created_at` using `dayjs`
+    return logs.map(log => ({
+      ...log,
+      created_at: dayjs(log.created_at).format('MM/DD/YY hh:mm A'),
+    }));
+  } catch (error) {
+    console.error('Error fetching logs:', error);
+    return [];
+  }
+};
+
+// Function to fetch parked vehicles from the database
+
+const fetchParkedVehicles = async () => {
+  try {
+    const query = `
+      SELECT
+        ph.id AS history_id,
+        ph.timestamp_in AS time_in,
+        vehicles.plate_number AS plate_number,
+        TIMESTAMPDIFF(SECOND, timestamp_in, NOW()) AS elapsed_time_seconds
+      FROM user_parking_history ph
+      JOIN vehicles ON ph.vehicle_id = vehicles.id
+      WHERE ph.timestamp_out IS NULL
+
+      UNION ALL
+
+      SELECT
+        ph.id AS history_id,
+        ph.timestamp_in AS time_in,
+        vehicles.plate_number AS plate_number,
+        TIMESTAMPDIFF(SECOND, timestamp_in, NOW()) AS elapsed_time_seconds
+      FROM premium_parking_history ph
+      JOIN vehicles ON ph.vehicle_id = vehicles.id
+      WHERE ph.timestamp_out IS NULL
+
+      UNION all
+
+      SELECT
+        ph.id AS history_id,
+        ph.timestamp_in AS time_in,
+        visitors.vehicle_plate_number AS plate_number,
+        TIMESTAMPDIFF(SECOND, timestamp_in, NOW()) AS elapsed_time_seconds
+      FROM visitor_parking_history ph
+      JOIN visitors ON ph.visitor_id = visitors.id
+      WHERE ph.timestamp_out IS null
+
+      ORDER BY time_in DESC;
+    `;
+
+    const [vehicles] = await db.query(query);
+
+    const formattedRows = vehicles.map(vehicle => {
+      const elapsedSeconds = vehicle.elapsed_time_seconds
+      const hours = Math.floor(elapsedSeconds / 3600) // Convert seconds to hours
+      const minutes = Math.floor((elapsedSeconds % 3600) / 60) // Get remaining minutes
+      const formattedDuration = `${hours}h ${minutes}m`
+
+      return {
+        ...vehicle,
+        time_in: dayjs(vehicle.time_in).format('hh:mm A'),
+        elapsed_time: formattedDuration
+      }
+    })
+
+    return formattedRows
+  } catch (error) {
+    console.error('Error fetching parked vehicles:', error);
+    return [];
+  }
+}
+
+// Function to send logs to all connected WebSocket clients
+const sendLogsToClients = async () => {
+  try {
+    const logs = await fetchLogs();
+
+    // Send the logs to each connected client
+    logsWSS.clients.forEach(client => {
+      if (client.readyState === WebSocket.OPEN) {
+        client.send(JSON.stringify(logs));
+      } else {
+        console.log('Skipping closed WebSocket client');
+      }
+    });
+  } catch (error) {
+    console.error('Error sending logs to clients:', error);
+  }
+};
+
+// Handle logs WebSocket connections
+logsWSS.on('connection', (ws, req) => {
+  const ip = req.socket.remoteAddress.startsWith('::ffff:') ? req.socket.remoteAddress.slice(7) : req.socket.remoteAddress;
+  console.log(`${ip} connected to /logs WebSocket`);
+  
+  // Set interval for sending logs
+  const intervalId = setInterval(async () => {
+    try {
+      console.log('Sending logs to clients...');
+      await sendLogsToClients();
+    } catch (error) {
+      console.error('Error sending logs:', error);
+    }
+  }, 5000); // Send logs every 5 seconds
+
+  // Handle close event
+  ws.on('close', () => {
+    console.log(`${ip} disconnected from /logs WebSocket`);
+    clearInterval(intervalId); // Clear the interval when the client disconnects
+  });
+
+  // Handle errors
+  ws.on('error', (error) => {
+    console.error('WebSocket error:', error);
+    clearInterval(intervalId); // Clear the interval on error to prevent resource leak
+  });
+});
+
+// Function to send logs to all connected WebSocket clients
+const sendParkedVehiclestoClients = async () => {
+  try {
+    const logs = await fetchParkedVehicles();
+
+    // Send the logs to each connected client
+    realtimeWSS.clients.forEach(client => {
+      if (client.readyState === WebSocket.OPEN) {
+        client.send(JSON.stringify(logs));
+      } else {
+        console.log('Skipping closed WebSocket client');
+      }
+    });
+  } catch (error) {
+    console.error('Error sending logs to clients:', error);
+  }
+};
+
+// Handle realtime parked vehicles WebSocket connections
+realtimeWSS.on('connection', (ws, req) => {
+  const ip = req.socket.remoteAddress.startsWith('::ffff:') ? req.socket.remoteAddress.slice(7) : req.socket.remoteAddress;
+  console.log(`${ip} connected to /realtime WebSocket`);
+  
+  // Set interval for sending logs
+  const intervalId = setInterval(async () => {
+    try {
+      console.log('Sending realtime parked vehicles to clients...');
+      await sendParkedVehiclestoClients();
+    } catch (error) {
+      console.error('Error sending realtime parked vehicles:', error);
+    }
+  }, 5000); // Send realtime parked vehicles every 5 seconds
+
+  // Handle close event
+  ws.on('close', () => {
+    console.log(`${ip} disconnected from /realtime WebSocket`);
+    clearInterval(intervalId); // Clear the interval when the client disconnects
+  });
+
+  // Handle errors
+  ws.on('error', (error) => {
+    console.error('WebSocket error:', error);
+    clearInterval(intervalId); // Clear the interval on error to prevent resource leak
+  });
+});
+
 
 // Upgrade HTTP connections to WebSocket based on the URL path
 server.on('upgrade', (request, socket, head) => {
@@ -313,6 +531,14 @@ server.on('upgrade', (request, socket, head) => {
   } else if (pathname === '/user') {
     userWSS.handleUpgrade(request, socket, head, (ws) => {
       userWSS.emit('connection', ws, request);
+    });
+  } else if (pathname === '/logs') {
+    logsWSS.handleUpgrade(request, socket, head, (ws) => {
+      logsWSS.emit('connection', ws, request);
+    });
+  } else if (pathname === '/realtime') {
+    realtimeWSS.handleUpgrade(request, socket, head, (ws) => {
+      realtimeWSS.emit('connection', ws, request);
     });
   } else {
     socket.destroy();
