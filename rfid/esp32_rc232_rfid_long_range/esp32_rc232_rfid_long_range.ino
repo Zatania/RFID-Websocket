@@ -73,7 +73,8 @@ void loop() {
     String hexData = "";
     for (int i = 0; i < bufferSize; i++) {
       if ((uint8_t)buffer[i] < 0x10) hexData += "0"; // Add leading zero for single digit
-      hexData += String((uint8_t)buffer[i], HEX);
+      hexData += String((uint8_t)buffer[i], HEX); // Append hex byte to string
+      if (i < bufferSize - 1) hexData += "";
     }
 
     // Print and send the hex data
