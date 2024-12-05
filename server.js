@@ -279,7 +279,7 @@ userWSS.on('connection', (ws, req) => {
   userClients.push(ws);
 
   // Start the notification check every minute for this user
-  setInterval(() => checkNotifications(ws), 60000); // Check every minute
+  setInterval(() => checkNotifications(ws), 30000); // Check every minute
 
   ws.on('message', message => {
     console.log(`[User] Received: ${message}`);
