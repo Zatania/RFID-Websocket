@@ -371,13 +371,14 @@ const fetchLogs = async () => {
 const fetchParkedVehicles = async () => {
   try {
     const query = `
-      
       SELECT
         ph.id AS history_id,
+        'user_parking_history' AS table_name,
         CONCAT(users.first_name, ' ', users.last_name) AS full_name,
         vehicles.plate_number AS plate_number,
         ph.timestamp_in AS time_in,
-        TIMESTAMPDIFF(SECOND, timestamp_in, NOW()) AS elapsed_time_seconds
+        TIMESTAMPDIFF(SECOND, ph.timestamp_in, NOW()) AS elapsed_time_seconds,
+        ph.status AS status
       FROM user_parking_history ph
       JOIN vehicles ON ph.vehicle_id = vehicles.id
       JOIN users ON ph.user_id = users.id
@@ -387,46 +388,70 @@ const fetchParkedVehicles = async () => {
 
       SELECT
         ph.id AS history_id,
+        'premium_parking_history' AS table_name,
         CONCAT(premiums.first_name, ' ', premiums.last_name) AS full_name,
         vehicles.plate_number AS plate_number,
         ph.timestamp_in AS time_in,
-        TIMESTAMPDIFF(SECOND, timestamp_in, NOW()) AS elapsed_time_seconds
+        TIMESTAMPDIFF(SECOND, ph.timestamp_in, NOW()) AS elapsed_time_seconds,
+        ph.status AS status
       FROM premium_parking_history ph
       JOIN vehicles ON ph.vehicle_id = vehicles.id
       JOIN premiums ON ph.premium_id = premiums.id
       WHERE ph.timestamp_out IS NULL
 
-      UNION all
+      UNION ALL
 
       SELECT
         ph.id AS history_id,
+        'visitor_parking_history' AS table_name,
         CONCAT(visitors.first_name, ' ', visitors.last_name) AS full_name,
         visitors.vehicle_plate_number AS plate_number,
         ph.timestamp_in AS time_in,
-        TIMESTAMPDIFF(SECOND, timestamp_in, NOW()) AS elapsed_time_seconds
+        TIMESTAMPDIFF(SECOND, ph.timestamp_in, NOW()) AS elapsed_time_seconds,
+        ph.status AS status
       FROM visitor_parking_history ph
       JOIN visitors ON ph.visitor_id = visitors.id
-      WHERE ph.timestamp_out IS null
+      WHERE ph.timestamp_out IS NULL
 
       ORDER BY time_in DESC;
-    `;
+    `
 
-    const [vehicles] = await db.query(query);
+    // Execute the query
+    const [vehicles] = await db.query(query)
 
-    const formattedRows = vehicles.map(vehicle => {
+    // Loop through results to format rows and check for elapsed time > 8 hours
+    for (const vehicle of vehicles) {
       const elapsedSeconds = vehicle.elapsed_time_seconds
       const hours = Math.floor(elapsedSeconds / 3600) // Convert seconds to hours
       const minutes = Math.floor((elapsedSeconds % 3600) / 60) // Get remaining minutes
       const formattedDuration = `${hours}h ${minutes}m`
 
-      return {
-        ...vehicle,
-        time_in: dayjs(vehicle.time_in).format('hh:mm A'),
-        elapsed_time: formattedDuration
-      }
-    })
+      vehicle.elapsed_time = formattedDuration // Add formatted duration
+      vehicle.time_in = dayjs(vehicle.time_in).format('hh:mm A')
 
-    return formattedRows
+      // If elapsed time exceeds 8 hours, update the status in the corresponding table
+      if (hours >= 8) {
+        const updateQuery = `
+          UPDATE ${vehicle.table_name}
+          SET status = 'Overparked'
+          WHERE id = ? AND timestamp_out IS NULL
+        `
+
+        // Execute the update query
+        await db.query(updateQuery, [vehicle.history_id])
+      } else {
+        const updateQuery = `
+          UPDATE ${vehicle.table_name}
+          SET status = 'Parked'
+          WHERE id = ? AND timestamp_out IS NULL
+        `
+
+        // Execute the update query
+        await db.query(updateQuery, [vehicle.history_id])
+      }
+    }
+
+    return vehicles
   } catch (error) {
     console.error('Error fetching parked vehicles:', error);
     return [];
