@@ -429,8 +429,11 @@ const fetchParkedVehicles = async () => {
       vehicle.elapsed_time = formattedDuration // Add formatted duration
       vehicle.time_in = dayjs(vehicle.time_in).format('hh:mm A')
 
-      // If elapsed time exceeds 8 hours, update the status in the corresponding table
-      if (hours >= 8) {
+      // If elapsed time exceeds 8 hours, update the status only for user and visitor parking histories
+      if (
+        hours >= 8 &&
+        (vehicle.table_name === 'user_parking_history' || vehicle.table_name === 'visitor_parking_history')
+      ) {
         const updateQuery = `
           UPDATE ${vehicle.table_name}
           SET status = 'Overparked'
@@ -439,7 +442,12 @@ const fetchParkedVehicles = async () => {
 
         // Execute the update query
         await db.query(updateQuery, [vehicle.history_id])
-      } else {
+      } else if (
+        hours < 8 &&
+        (vehicle.table_name === 'user_parking_history' ||
+          vehicle.table_name === 'premium_parking_history' ||
+          vehicle.table_name === 'visitor_parking_history')
+      ) {
         const updateQuery = `
           UPDATE ${vehicle.table_name}
           SET status = 'Parked'
@@ -453,8 +461,9 @@ const fetchParkedVehicles = async () => {
 
     return vehicles
   } catch (error) {
-    console.error('Error fetching parked vehicles:', error);
-    return [];
+    console.error('Error fetching parked vehicles:', error)
+
+    return []
   }
 }
 
