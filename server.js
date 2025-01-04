@@ -61,6 +61,57 @@ const checkNotifications = async (ws) => {
   }
 };
 
+// Function to check if 'premiums' table 'end_date' is today then update 'status' to 'Expired' and insert into notifications table
+const checkPremiumStatus = async () => {
+  console.log('Checking premium statuses');
+  try {
+    const [premiums] = await db.query('SELECT * FROM premiums');
+
+    if (!Array.isArray(premiums)) {
+      throw new Error('Premiums data is not an array.');
+    }
+
+    const currentDate = new Date();
+    for (const premium of premiums) {
+      const expirationDate = new Date(premium.end_date);
+      const timeDiff = expirationDate - currentDate;
+      let newStatus;
+
+      // Determine new status based on time difference
+      if (timeDiff <= 0) {
+        newStatus = 'Expired';
+      } else {
+        newStatus = 'Active';
+      }
+
+      // Update status only if it's different from the current status
+      if (premium.status !== newStatus) {
+        console.log(`Updating premium user ${premium.id} status to ${newStatus}`);
+        await db.query('UPDATE premiums SET status = ? WHERE id = ?', [newStatus, premium.id]);
+      }
+
+      // Handle notifications for expired premiums
+      if (newStatus === 'Expired') {
+        const phone_number = premium.phone_number;
+        const message = `Your premium subscription has expired. Please renew your subscription.`;
+
+        // Insert notifications
+        await db.query(
+          'INSERT INTO notifications (phone_number, title, message, sms_status) VALUES (?, ?, ?, ?)',
+          [phone_number, 'Premium Subscription Expiry', message, 'pending']
+        );
+
+        console.log(`Notification sent to ${phone_number} for premium status: ${newStatus}`);
+      }
+    }
+  } catch (error) {
+    console.error('Error checking premium statuses:', error);
+  }
+};
+
+// Test CheckPremiumStatus function every second
+// setInterval(() => checkPremiumStatus(), 1000);
+
 // Function to check vehicle statuses
 const checkVehicleStatuses = async () => {
   try {
@@ -239,11 +290,12 @@ const checkDriverLicense = async () => {
   }
 };
 
-// Schedule the task to run at 5:00 AM daily
-schedule.scheduleJob('0 5 * * *', () => {
-  console.log('Running vehicle status check at 5:00 AM');
+// Schedule the task to run every 8 hours
+schedule.scheduleJob('0 */8 * * *', () => {
+  console.log('Running status check every 8 hours');
   checkVehicleStatuses();
   checkDriverLicense();
+  checkPremiumStatus();
 });
 
 // Store connected clients
