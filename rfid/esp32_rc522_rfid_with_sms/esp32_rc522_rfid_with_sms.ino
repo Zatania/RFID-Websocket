@@ -137,6 +137,8 @@ void webSocketEvent(WStype_t type, uint8_t * payload, size_t length) {
 
       // Send SMS via GSM module
       sendSMS(phoneNumber, message);
+      bool smsStatus = sendSMS(phoneNumber, message);
+      sendWebSocketResponse(smsStatus, smsStatus ? "SMS sent successfully." : "SMS failed to send.");
     } break;
   }
 }
@@ -186,4 +188,16 @@ void sendSMS(const char* phoneNumber, const char* message) {
   } else {
     Serial.println("Failed to send SMS.");
   }
+}
+
+void sendWebSocketResponse(bool success, const char* message) {
+  StaticJsonDocument<200> responseDoc;
+  responseDoc["status"] = success ? "success" : "error";
+  responseDoc["message"] = message;
+
+  String response;
+  serializeJson(responseDoc, response);
+
+  webSocket.sendTXT(response);
+  Serial.printf("Sent WebSocket response: %s\n", response.c_str());
 }

@@ -49,8 +49,38 @@ const checkNotifications = async (ws) => {
         // Send the notification to the ESP32
         ws.send(JSON.stringify(notif));
 
-        // After sending the notification, update the status to 'sent'
-        await db.query('UPDATE notifications SET sms_status = ? WHERE id = ?', ['sent', notification.id]);
+        // Wait for response from ESP32
+        const espResponse = await new Promise((resolve, reject) => {
+          const timeout = setTimeout(() => reject('Timeout waiting for ESP32 response'), 5000);
+
+          ws.once('message', (message) => {
+            clearTimeout(timeout);
+            try {
+              const response = JSON.parse(message);
+              if (response.phone_number === notification.phone_number) {
+                resolve(response);
+              } else {
+                reject('Unexpected response');
+              }
+            } catch (err) {
+              reject('Invalid response format');
+            }
+          });
+        });
+
+        // Process the response
+        if (espResponse.status === 'success') {
+          console.log(`Notification sent successfully: ${notif.phone_number}`);
+          // Update the status to 'sent'
+          await db.query('UPDATE notifications SET sms_status = ? WHERE id = ?', ['sent', notification.id]);
+        } else {
+          console.error(`Failed to send notification to ${notif.phone_number}: ${espResponse.error}`);
+          // Update the status to 'error'
+          await db.query('UPDATE notifications SET sms_status = ? WHERE id = ?', ['error', notification.id]);
+        }
+
+        /* // After sending the notification, update the status to 'sent'
+        await db.query('UPDATE notifications SET sms_status = ? WHERE id = ?', ['sent', notification.id]); */
       });
     } else {
       console.log('No notifications to send');
