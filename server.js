@@ -328,6 +328,13 @@ schedule.scheduleJob('0 */8 * * *', () => {
   checkPremiumStatus();
 });
 
+
+// Schedule the notification check to run every minute
+setInterval(() => {
+  console.log('Running periodic notification check...');
+  checkNotifications();
+}, 60000); // 60000 ms = 1 minute
+
 // Store connected clients
 const vehicleClients = [];
 const userClients = [];
@@ -367,9 +374,6 @@ userWSS.on('connection', (ws, req) => {
 
   // Add new client to the array
   userClients.push(ws);
-
-  // Start the notification check every minute for this user
-  setInterval(() => checkNotifications(ws), 60000); // Check every minute
 
   ws.on('message', message => {
     console.log(`[User] Received: ${message}`);
