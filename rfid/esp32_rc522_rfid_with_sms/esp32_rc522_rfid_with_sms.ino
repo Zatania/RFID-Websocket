@@ -136,14 +136,14 @@ void webSocketEvent(WStype_t type, uint8_t * payload, size_t length) {
       Serial.printf("Phone: %s, Message: %s\n", phoneNumber, message);
 
       // Send SMS via GSM module
-      sendSMS(phoneNumber, message);
+      // sendSMS(phoneNumber, message);
       bool smsStatus = sendSMS(phoneNumber, message);
       sendWebSocketResponse(smsStatus, smsStatus ? "SMS sent successfully." : "SMS failed to send.");
     } break;
   }
 }
 
-void sendSMS(const char* phoneNumber, const char* message) {
+bool sendSMS(const char* phoneNumber, const char* message) {
   Serial.println("Initializing SMS...");
 
   // Begin communication with SIM900A
@@ -152,21 +152,17 @@ void sendSMS(const char* phoneNumber, const char* message) {
   delay(1000);
   Serial2.println("AT"); // Send AT command to check communication
   delay(100);
-  if (Serial2.find("OK")) {
-    Serial.println("SIM900A is ready.");
-  } else {
+  if (!Serial2.find("OK")) {
     Serial.println("Failed to connect to SIM900A.");
-    return;
+    return false; // Return failure
   }
 
   // Set SMS to text mode
   Serial2.println("AT+CMGF=1"); 
   delay(100);
-  if (Serial2.find("OK")) {
-    Serial.println("Text mode set.");
-  } else {
+  if (!Serial2.find("OK")) {
     Serial.println("Failed to set text mode.");
-    return;
+    return false; // Return failure
   }
 
   // Set recipient phone number
@@ -185,8 +181,10 @@ void sendSMS(const char* phoneNumber, const char* message) {
   
   if (Serial2.find("OK")) {
     Serial.println("SMS sent successfully!");
+    return true; // Return success
   } else {
     Serial.println("Failed to send SMS.");
+    return false; // Return failure
   }
 }
 
