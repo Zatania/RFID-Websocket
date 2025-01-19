@@ -139,25 +139,36 @@ void webSocketEvent(WStype_t type, uint8_t * payload, size_t length) {
       DeserializationError error = deserializeJson(doc, payload);
 
       if (error) {
-        // If JSON parsing failed, assume it's an RFID UID (string)
-        Serial.println("Received RFID UID: ");
+        Serial.println("Failed to parse JSON, assuming RFID UID");
+        // Handle as RFID UID (no JSON, just plain text)
         Serial.println((char*)payload);
         break;
       }
 
-      // If it's JSON, extract the phone number and message
-      const char* phoneNumber = doc["phone_number"];
-      const char* message = doc["message"];
+      // Process message based on type (sms or rfid)
+      const char* type = doc["type"]; // Add type field to differentiate messages
 
-      // Handle sending SMS
-      Serial.println("Sending SMS...");
-      Serial.printf("Phone: %s, Message: %s\n", phoneNumber, message);
-
-      bool smsStatus = sendSMS(phoneNumber, message);
-      sendWebSocketResponse(smsStatus, smsStatus ? "SMS sent successfully." : "SMS failed to send.");
+      if (type) {
+        if (strcmp(type, "sms") == 0) {
+          const char* phoneNumber = doc["phone_number"];
+          const char* message = doc["message"];
+          if (phoneNumber && message) {
+            bool smsStatus = sendSMS(phoneNumber, message);
+            sendWebSocketResponse(smsStatus, smsStatus ? "SMS sent successfully." : "SMS failed to send.");
+          }
+        } else if (strcmp(type, "rfid") == 0) {
+          // Handle RFID data here
+          const char* rfidData = doc["rfid"];
+          if (rfidData) {
+            // Send RFID data back to the server (WebSocket)
+            sendWebSocketResponse(true, rfidData); // Example response
+          }
+        }
+      }
     } break;
   }
 }
+
 
 bool sendSMS(const char* phoneNumber, const char* message) {
   Serial.println("Sending SMS...");

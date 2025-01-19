@@ -44,7 +44,9 @@ const checkNotifications = async () => {
         // Construct the notification message
         const notif = {
           phone_number: notification.phone_number,
-          message: notification.message
+          message: notification.message,
+          notification_id: notification.id, // Unique ID
+          type: "sms" // Specify this is an SMS notification
         };
 
         console.log(`Sending notification: ${JSON.stringify(notif)}`);
@@ -62,10 +64,19 @@ const checkNotifications = async () => {
                 clearTimeout(timeout);
                 try {
                   const response = JSON.parse(message);
-                  if (response.phone_number === notification.phone_number) {
-                    resolve(response);
+                  if (response.type === "sms") {
+                    // Handle SMS response (update database, etc.)
+                    if (response.notification_id === notification.id) {
+                      resolve(response);
+                    } else {
+                      reject('Unexpected SMS response');
+                    }
+                  } else if (response.type === "rfid") {
+                    // Handle RFID response
+                    console.log("Received RFID data:", response);
+                    // Optionally, process RFID data (store, log, etc.)
                   } else {
-                    reject('Unexpected response');
+                    reject('Unknown message type');
                   }
                 } catch (err) {
                   reject('Invalid response format');
