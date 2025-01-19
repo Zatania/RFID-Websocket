@@ -52,7 +52,7 @@ const checkNotifications = async () => {
 
         // Skip sending if already marked as sent
         if (notification.sms_status === "sent") {
-          console.log(`Skipping already processed notification: ${notification.notification_id}`);
+          console.log(`Skipping already processed notification: ${notification.id}`);
           continue;
         }
 
