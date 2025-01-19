@@ -78,7 +78,7 @@ void setup() {
   delay(100);
   if (!Serial2.find("OK")) {
     Serial.println("Failed to set text mode.");
-    return false; // Return failure
+    return; // Return failure
   }
 }
 
