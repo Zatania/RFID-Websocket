@@ -40,7 +40,8 @@ const checkNotifications = async () => {
     if (notifications.length > 0) {
       console.log('Sending notifications to esp32');
 
-      notifications.forEach(async (notification) => {
+      // Process each notification one by one
+      for (let notification of notifications) {
         // Construct the notification message
         const notif = {
           phone_number: notification.phone_number,
@@ -74,7 +75,6 @@ const checkNotifications = async () => {
                   } else if (response.type === "rfid") {
                     // Handle RFID response
                     console.log("Received RFID data:", response);
-                    // Optionally, process RFID data (store, log, etc.)
                   } else {
                     reject('Unknown message type');
                   }
@@ -100,7 +100,7 @@ const checkNotifications = async () => {
         } else {
           console.log('ESP32 client is not connected. Skipping notification.');
         }
-      });
+      }
     } else {
       console.log('No notifications to send');
     }
@@ -109,6 +109,7 @@ const checkNotifications = async () => {
     console.error('Error checking notifications:', error);
   }
 };
+
 
 // Function to check if 'premiums' table 'end_date' is today then update 'status' to 'Expired' and insert into notifications table
 const checkPremiumStatus = async () => {
