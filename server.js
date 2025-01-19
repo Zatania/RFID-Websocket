@@ -31,11 +31,11 @@ dns.lookup(os.hostname(), { family: 4 }, (err, add) => {
 let esp32Client = null;
 let notificationInterval = null;
 
-// Function to check notification table and send out notifications to ESP32 if pending
+// Function to check notification table and send out notifications to ESP32 if pending or error
 const checkNotifications = async () => {
   console.log('Checking notifications every minute');
   try {
-    const [notifications] = await db.query('SELECT * FROM notifications WHERE sms_status = "pending"');
+    const [notifications] = await db.query('SELECT * FROM notifications WHERE sms_status IN ("pending", "error")');
 
     if (notifications.length > 0) {
       console.log('Sending notifications to ESP32');
@@ -50,8 +50,8 @@ const checkNotifications = async () => {
           type: "sms" // Specify this is an SMS notification
         };
 
-        // Skip sending if already marked as sent 
-        if (notification.sms_status !== "pending" || notification.sms_status !== "error") {
+        // Skip sending if already marked as sent
+        if (notification.sms_status === "sent") {
           console.log(`Skipping already processed notification: ${notification.notification_id}`);
           continue;
         }
@@ -74,7 +74,7 @@ const checkNotifications = async () => {
                   await db.query('UPDATE notifications SET sms_status = ? WHERE id = ?', ['sent', notification.id]);
                 } else if (response.status === 'error') {
                   console.error(`Failed to send notification to ${notif.phone_number}: ${response.message}`);
-                  // Update the status to 'error'
+                  // Update the status to 'error' to retry
                   await db.query('UPDATE notifications SET sms_status = ? WHERE id = ?', ['error', notification.id]);
                 }
               } else {
