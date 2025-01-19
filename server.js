@@ -392,14 +392,14 @@ userWSS.on('connection', (ws, req) => {
   if (subprotocol === "esp32_subprotocol") {
     esp32Client = ws;
 
-    // Start an interval to check notifications every 10 seconds for ESP32 client
+    // Start an interval to check notifications every 30 seconds for ESP32 client
     if (notificationInterval) {
       clearInterval(notificationInterval); // Clear any existing interval
     }
     notificationInterval = setInterval(() => {
       console.log('Running periodic notification check for ESP32 client...');
       checkNotifications(); // This will send notifications to the ESP32 client
-    }, 10000); // 10000 ms = 10 seconds
+    }, 30000); // 30000 ms = 30 seconds
   }
 
   // Add new client to the array
