@@ -152,16 +152,18 @@ void webSocketEvent(WStype_t type, uint8_t * payload, size_t length) {
         if (strcmp(type, "sms") == 0) {
           const char* phoneNumber = doc["phone_number"];
           const char* message = doc["message"];
-          if (phoneNumber && message) {
+          const int notificationId = doc["notification_id"]; // Expect notification ID from the server
+
+          if (phoneNumber && message && notificationId != NULL) {
             bool smsStatus = sendSMS(phoneNumber, message);
-            sendWebSocketResponse(smsStatus, smsStatus ? "SMS sent successfully." : "SMS failed to send.");
+            sendWebSocketResponse(smsStatus, smsStatus ? "SMS sent successfully." : "SMS failed to send.", "sms", notificationId);
           }
         } else if (strcmp(type, "rfid") == 0) {
           // Handle RFID data here
           const char* rfidData = doc["rfid"];
           if (rfidData) {
             // Send RFID data back to the server (WebSocket)
-            sendWebSocketResponse(true, rfidData); // Example response
+            sendWebSocketResponse(true, rfidData, "rfid", -1); // No notification ID for RFID
           }
         }
       }
@@ -196,10 +198,12 @@ bool sendSMS(const char* phoneNumber, const char* message) {
   }
 }
 
-void sendWebSocketResponse(bool success, const char* message) {
+void sendWebSocketResponse(bool success, const char* message, const char* type, int notificationId) {
   StaticJsonDocument<200> responseDoc;
   responseDoc["status"] = success ? "success" : "error";
   responseDoc["message"] = message;
+  responseDoc["type"] = type;  // Add type (sms or rfid)
+  responseDoc["notification_id"] = notificationId;  // Include notification_id in the response
 
   String response;
   serializeJson(responseDoc, response);
