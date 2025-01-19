@@ -5,7 +5,7 @@
 #include <ArduinoJson.h>
 
 #define SS_PIN 5     // SS/SDA connected to GPIO 5
-#define RST_PIN 0   // RST connected to GPIO D0 (GPIO 16)
+#define RST_PIN 0    // RST connected to GPIO D0 (GPIO 16)
 MFRC522 mfrc522(SS_PIN, RST_PIN);  // Create MFRC522 instance
 
 #define ON_Board_LED 2  // On-board LED pin for ESP32
@@ -13,7 +13,7 @@ MFRC522 mfrc522(SS_PIN, RST_PIN);  // Create MFRC522 instance
 const char* ssid = "{ssid}"; // Change to your WiFi SSID
 const char* password = "{password}"; // Change to your WiFi password
 
-const char* computer_ip_address = "{computer_ip_address}"; // Change to your computer's IP address
+const char* computer_ip_address = "{computer_id_add}"; // Change to your computer's IP address
 const int port = 4000;
 const char* path = "/user";
 
@@ -58,9 +58,20 @@ void setup() {
   Serial.println("");
 
   // Initialize WebSocket client and set up event handlers
-  webSocket.begin(computer_ip_address, port, path);
+  webSocket.begin(computer_ip_address, port, path, "esp32_subprotocol");
   webSocket.onEvent(webSocketEvent);
   webSocket.setReconnectInterval(5000);
+
+  // Initialize Serial2 for GSM (only once)
+  Serial2.begin(9600, SERIAL_8N1, 16, 17); // RX=16, TX=17 (adjust pins if needed)
+  delay(1000); // Give the GSM module some time to initialize
+  Serial2.println("AT"); // Send AT command to check communication
+  delay(100);
+  if (Serial2.find("OK")) {
+    Serial.println("GSM module initialized successfully.");
+  } else {
+    Serial.println("Failed to initialize GSM module.");
+  }
 }
 
 void loop() {
@@ -123,7 +134,6 @@ void webSocketEvent(WStype_t type, uint8_t * payload, size_t length) {
         // If JSON parsing failed, assume it's an RFID UID (string)
         Serial.println("Received RFID UID: ");
         Serial.println((char*)payload);
-        // If this is a UID, just print or handle it accordingly
         break;
       }
 
@@ -135,8 +145,6 @@ void webSocketEvent(WStype_t type, uint8_t * payload, size_t length) {
       Serial.println("Sending SMS...");
       Serial.printf("Phone: %s, Message: %s\n", phoneNumber, message);
 
-      // Send SMS via GSM module
-      // sendSMS(phoneNumber, message);
       bool smsStatus = sendSMS(phoneNumber, message);
       sendWebSocketResponse(smsStatus, smsStatus ? "SMS sent successfully." : "SMS failed to send.");
     } break;
@@ -144,18 +152,7 @@ void webSocketEvent(WStype_t type, uint8_t * payload, size_t length) {
 }
 
 bool sendSMS(const char* phoneNumber, const char* message) {
-  Serial.println("Initializing SMS...");
-
-  // Begin communication with SIM900A
-  Serial2.begin(9600, SERIAL_8N1, 16, 17); // RX=16, TX=17 (adjust pins if needed)
-  
-  delay(1000);
-  Serial2.println("AT"); // Send AT command to check communication
-  delay(100);
-  if (!Serial2.find("OK")) {
-    Serial.println("Failed to connect to SIM900A.");
-    return false; // Return failure
-  }
+  Serial.println("Sending SMS...");
 
   // Set SMS to text mode
   Serial2.println("AT+CMGF=1"); 
