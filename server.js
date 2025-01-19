@@ -333,7 +333,7 @@ schedule.scheduleJob('0 */8 * * *', () => {
 setInterval(() => {
   console.log('Running periodic notification check...');
   checkNotifications();
-}, 60000); // 60000 ms = 1 minute
+}, 10000); // 60000 ms = 1 minute
 
 // Store connected clients
 const vehicleClients = [];
