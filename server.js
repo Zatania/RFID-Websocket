@@ -328,13 +328,6 @@ schedule.scheduleJob('0 */8 * * *', () => {
   checkPremiumStatus();
 });
 
-
-// Schedule the notification check to run every minute
-setInterval(() => {
-  console.log('Running periodic notification check...');
-  checkNotifications();
-}, 10000); // 60000 ms = 1 minute
-
 // Store connected clients
 const vehicleClients = [];
 const userClients = [];
@@ -375,6 +368,11 @@ userWSS.on('connection', (ws, req) => {
   // Add new client to the array
   userClients.push(ws);
 
+   // Start an interval for this specific WebSocket client
+   const notificationInterval = setInterval(() => {
+    checkNotifications(ws);
+  }, 10000); // 10000 ms = 10 seconds
+
   ws.on('message', message => {
     console.log(`[User] Received: ${message}`);
     // Broadcast the received message to all connected user clients
@@ -392,6 +390,9 @@ userWSS.on('connection', (ws, req) => {
     if (index > -1) {
       userClients.splice(index, 1);
     }
+
+    // Clear the interval for this client
+    clearInterval(notificationInterval);
   });
 });
 
