@@ -50,6 +50,12 @@ const checkNotifications = async () => {
           type: "sms" // Specify this is an SMS notification
         };
 
+        // Skip sending if already marked as sent 
+        if (notification.sms_status !== "pending" || notification.sms_status !== "error") {
+          console.log(`Skipping already processed notification: ${notification.notification_id}`);
+          continue;
+        }
+
         console.log(`Sending notification: ${JSON.stringify(notif)}`);
 
         if (esp32Client && esp32Client.readyState === WebSocket.OPEN) {
@@ -60,26 +66,19 @@ const checkNotifications = async () => {
           esp32Client.once('message', async (message) => {
             try {
               const response = JSON.parse(message);
-              if (response.type === "sms") {
-                // Handle SMS response
-                if (response.notification_id === notification.id) {
-                  if (response.status === 'success') {
-                    console.log(`Notification sent successfully: ${notif.phone_number}`);
-                    // Update the status to 'sent'
-                    await db.query('UPDATE notifications SET sms_status = ? WHERE id = ?', ['sent', notification.id]);
-                  } else {
-                    console.error(`Failed to send notification to ${notif.phone_number}: ${response.error}`);
-                    // Update the status to 'error'
-                    await db.query('UPDATE notifications SET sms_status = ? WHERE id = ?', ['error', notification.id]);
-                  }
-                } else {
-                  console.error('Notification ID mismatch or unexpected response');
+              if (response.type === "sms" && response.notification_id === notification.id) {
+                // Process SMS response
+                if (response.status === 'success') {
+                  console.log(`Notification sent successfully: ${notif.phone_number}`);
+                  // Update the status to 'sent'
+                  await db.query('UPDATE notifications SET sms_status = ? WHERE id = ?', ['sent', notification.id]);
+                } else if (response.status === 'error') {
+                  console.error(`Failed to send notification to ${notif.phone_number}: ${response.message}`);
+                  // Update the status to 'error'
+                  await db.query('UPDATE notifications SET sms_status = ? WHERE id = ?', ['error', notification.id]);
                 }
-              } else if (response.type === "rfid") {
-                // Handle RFID response if needed
-                console.log("Received RFID data:", response);
               } else {
-                console.error('Unknown response type:', response.type);
+                console.error('Notification ID mismatch or unexpected response type');
               }
             } catch (err) {
               console.error('Error processing WebSocket message:', err);
@@ -97,6 +96,7 @@ const checkNotifications = async () => {
     console.error('Error checking notifications:', error);
   }
 };
+
 
 
 // Function to check if 'premiums' table 'end_date' is today then update 'status' to 'Expired' and insert into notifications table
