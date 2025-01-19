@@ -179,11 +179,9 @@ bool sendSMS(const char* phoneNumber, const char* message) {
   String modifiedMessage = "PIYUCHECKPOINT: "; // Prefix text
   modifiedMessage += message; // Append the original message
 
-  // Set recipient phone number
-  Serial2.println("AT+CMGS=\"");
-  Serial2.println(phoneNumber);
-  Serial2.println("\"");
-  delay(100);
+  // Set recipient phone number (AT command for sending SMS)
+  Serial2.println("AT+CMGS=\"" + String(phoneNumber) + "\"");
+  delay(200);
   
   // Send the SMS message with the prefix
   Serial2.print(modifiedMessage);

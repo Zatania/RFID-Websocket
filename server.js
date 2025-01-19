@@ -30,10 +30,17 @@ dns.lookup(os.hostname(), { family: 4 }, (err, add) => {
 
 let esp32Client = null;
 let notificationInterval = null;
+let isCheckingNotifications = false; // Flag to track if notifications are being checked
 
-// Function to check notification table and send out notifications to ESP32 if pending or error
 const checkNotifications = async () => {
+  if (isCheckingNotifications) {
+    console.log('Notification check is already in progress, skipping this check...');
+    return; // Skip if the check is already in progress
+  }
+
+  isCheckingNotifications = true; // Set flag to indicate the check is in progress
   console.log('Checking notifications every minute');
+
   try {
     const [notifications] = await db.query('SELECT * FROM notifications WHERE sms_status IN ("pending", "error")');
 
@@ -63,26 +70,31 @@ const checkNotifications = async () => {
           esp32Client.send(JSON.stringify(notif));
 
           // Listen for WebSocket message asynchronously
-          esp32Client.once('message', async (message) => {
-            try {
-              const response = JSON.parse(message);
-              if (response.type === "sms" && response.notification_id === notification.id) {
-                // Process SMS response
-                if (response.status === 'success') {
-                  console.log(`Notification sent successfully: ${notif.phone_number}`);
-                  // Update the status to 'sent'
-                  await db.query('UPDATE notifications SET sms_status = ? WHERE id = ?', ['sent', notification.id]);
-                } else if (response.status === 'error') {
-                  console.error(`Failed to send notification to ${notif.phone_number}: ${response.message}`);
-                  // Update the status to 'error' to retry
-                  await db.query('UPDATE notifications SET sms_status = ? WHERE id = ?', ['error', notification.id]);
+          await new Promise((resolve, reject) => {
+            esp32Client.once('message', async (message) => {
+              try {
+                const response = JSON.parse(message);
+                if (response.type === "sms" && response.notification_id === notification.id) {
+                  // Process SMS response
+                  if (response.status === 'success') {
+                    console.log(`Notification sent successfully: ${notif.phone_number}`);
+                    // Update the status to 'sent'
+                    await db.query('UPDATE notifications SET sms_status = ? WHERE id = ?', ['sent', notification.id]);
+                  } else if (response.status === 'error') {
+                    console.error(`Failed to send notification to ${notif.phone_number}: ${response.message}`);
+                    // Update the status to 'error' to retry
+                    await db.query('UPDATE notifications SET sms_status = ? WHERE id = ?', ['error', notification.id]);
+                  }
+                  resolve(); // Resolve after processing the response
+                } else {
+                  console.error('Notification ID mismatch or unexpected response type');
+                  reject(new Error('Notification ID mismatch or unexpected response type'));
                 }
-              } else {
-                console.error('Notification ID mismatch or unexpected response type');
+              } catch (err) {
+                console.error('Error processing WebSocket message:', err);
+                reject(err); // Reject on error
               }
-            } catch (err) {
-              console.error('Error processing WebSocket message:', err);
-            }
+            });
           });
         } else {
           console.log('ESP32 client is not connected. Skipping notification.');
@@ -91,11 +103,13 @@ const checkNotifications = async () => {
     } else {
       console.log('No notifications to send');
     }
-
   } catch (error) {
     console.error('Error checking notifications:', error);
   }
+
+  isCheckingNotifications = false; // Reset the flag when done
 };
+
 
 
 
@@ -384,6 +398,8 @@ userWSS.on('connection', (ws, req) => {
     if (notificationInterval) {
       clearInterval(notificationInterval); // Clear any existing interval
     }
+
+    // Run the notification check only once every 10 seconds if the ESP32 is connected
     notificationInterval = setInterval(() => {
       console.log('Running periodic notification check for ESP32 client...');
       checkNotifications(); // This will send notifications to the ESP32 client
