@@ -39,7 +39,7 @@ const checkNotifications = async () => {
   }
 
   isCheckingNotifications = true; // Set flag to indicate the check is in progress
-  console.log('Checking notifications every minute');
+  console.log('Checking notifications every 10 seconds...');
 
   try {
     const [notifications] = await db.query('SELECT * FROM notifications WHERE sms_status IN ("pending", "error")');
