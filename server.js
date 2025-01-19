@@ -38,7 +38,7 @@ const checkNotifications = async () => {
     const [notifications] = await db.query('SELECT * FROM notifications WHERE sms_status = "pending"');
 
     if (notifications.length > 0) {
-      console.log('Sending notifications to esp32');
+      console.log('Sending notifications to ESP32');
 
       // Process each notification one by one
       for (let notification of notifications) {
@@ -56,47 +56,35 @@ const checkNotifications = async () => {
           // Send the notification to the ESP32 only
           esp32Client.send(JSON.stringify(notif));
 
-          // Wait for response from ESP32
-          try {
-            const espResponse = await new Promise((resolve, reject) => {
-              const timeout = setTimeout(() => reject('Timeout waiting for ESP32 response'), 5000);
-
-              esp32Client.once('message', (message) => {
-                clearTimeout(timeout);
-                try {
-                  const response = JSON.parse(message);
-                  if (response.type === "sms") {
-                    // Handle SMS response (update database, etc.)
-                    if (response.notification_id === notification.id) {
-                      resolve(response);
-                    } else {
-                      reject('Unexpected SMS response');
-                    }
-                  } else if (response.type === "rfid") {
-                    // Handle RFID response
-                    console.log("Received RFID data:", response);
+          // Listen for WebSocket message asynchronously
+          esp32Client.once('message', async (message) => {
+            try {
+              const response = JSON.parse(message);
+              if (response.type === "sms") {
+                // Handle SMS response
+                if (response.notification_id === notification.id) {
+                  if (response.status === 'success') {
+                    console.log(`Notification sent successfully: ${notif.phone_number}`);
+                    // Update the status to 'sent'
+                    await db.query('UPDATE notifications SET sms_status = ? WHERE id = ?', ['sent', notification.id]);
                   } else {
-                    reject('Unknown message type');
+                    console.error(`Failed to send notification to ${notif.phone_number}: ${response.error}`);
+                    // Update the status to 'error'
+                    await db.query('UPDATE notifications SET sms_status = ? WHERE id = ?', ['error', notification.id]);
                   }
-                } catch (err) {
-                  reject('Invalid response format');
+                } else {
+                  console.error('Notification ID mismatch or unexpected response');
                 }
-              });
-            });
-
-            // Process the response
-            if (espResponse.status === 'success') {
-              console.log(`Notification sent successfully: ${notif.phone_number}`);
-              // Update the status to 'sent'
-              await db.query('UPDATE notifications SET sms_status = ? WHERE id = ?', ['sent', notification.id]);
-            } else {
-              console.error(`Failed to send notification to ${notif.phone_number}: ${espResponse.error}`);
-              // Update the status to 'error'
-              await db.query('UPDATE notifications SET sms_status = ? WHERE id = ?', ['error', notification.id]);
+              } else if (response.type === "rfid") {
+                // Handle RFID response if needed
+                console.log("Received RFID data:", response);
+              } else {
+                console.error('Unknown response type:', response.type);
+              }
+            } catch (err) {
+              console.error('Error processing WebSocket message:', err);
             }
-          } catch (error) {
-            console.error('Error handling ESP32 response:', error);
-          }
+          });
         } else {
           console.log('ESP32 client is not connected. Skipping notification.');
         }
@@ -406,7 +394,7 @@ userWSS.on('connection', (ws, req) => {
   userClients.push(ws);
 
   ws.on('message', message => {
-    console.log(`[User] Received: ${message}`);
+    console.log(`${message}`);
     // Broadcast the received message to all connected user clients
     userClients.forEach(client => {
       if (client.readyState === WebSocket.OPEN) {
