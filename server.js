@@ -28,8 +28,11 @@ dns.lookup(os.hostname(), { family: 4 }, (err, add) => {
   }
 });
 
+let esp32Client = null;
+let notificationInterval = null;
+
 // Function to check notification table and send out notifications to ESP32 if pending
-const checkNotifications = async (ws) => {
+const checkNotifications = async () => {
   console.log('Checking notifications every minute');
   try {
     const [notifications] = await db.query('SELECT * FROM notifications WHERE sms_status = "pending"');
@@ -46,41 +49,46 @@ const checkNotifications = async (ws) => {
 
         console.log(`Sending notification: ${JSON.stringify(notif)}`);
 
-        // Send the notification to the ESP32
-        ws.send(JSON.stringify(notif));
+        if (esp32Client && esp32Client.readyState === WebSocket.OPEN) {
+          // Send the notification to the ESP32 only
+          esp32Client.send(JSON.stringify(notif));
 
-        // Wait for response from ESP32
-        const espResponse = await new Promise((resolve, reject) => {
-          const timeout = setTimeout(() => reject('Timeout waiting for ESP32 response'), 5000);
+          // Wait for response from ESP32
+          try {
+            const espResponse = await new Promise((resolve, reject) => {
+              const timeout = setTimeout(() => reject('Timeout waiting for ESP32 response'), 5000);
 
-          ws.once('message', (message) => {
-            clearTimeout(timeout);
-            try {
-              const response = JSON.parse(message);
-              if (response.phone_number === notification.phone_number) {
-                resolve(response);
-              } else {
-                reject('Unexpected response');
-              }
-            } catch (err) {
-              reject('Invalid response format');
+              esp32Client.once('message', (message) => {
+                clearTimeout(timeout);
+                try {
+                  const response = JSON.parse(message);
+                  if (response.phone_number === notification.phone_number) {
+                    resolve(response);
+                  } else {
+                    reject('Unexpected response');
+                  }
+                } catch (err) {
+                  reject('Invalid response format');
+                }
+              });
+            });
+
+            // Process the response
+            if (espResponse.status === 'success') {
+              console.log(`Notification sent successfully: ${notif.phone_number}`);
+              // Update the status to 'sent'
+              await db.query('UPDATE notifications SET sms_status = ? WHERE id = ?', ['sent', notification.id]);
+            } else {
+              console.error(`Failed to send notification to ${notif.phone_number}: ${espResponse.error}`);
+              // Update the status to 'error'
+              await db.query('UPDATE notifications SET sms_status = ? WHERE id = ?', ['error', notification.id]);
             }
-          });
-        });
-
-        // Process the response
-        if (espResponse.status === 'success') {
-          console.log(`Notification sent successfully: ${notif.phone_number}`);
-          // Update the status to 'sent'
-          await db.query('UPDATE notifications SET sms_status = ? WHERE id = ?', ['sent', notification.id]);
+          } catch (error) {
+            console.error('Error handling ESP32 response:', error);
+          }
         } else {
-          console.error(`Failed to send notification to ${notif.phone_number}: ${espResponse.error}`);
-          // Update the status to 'error'
-          await db.query('UPDATE notifications SET sms_status = ? WHERE id = ?', ['error', notification.id]);
+          console.log('ESP32 client is not connected. Skipping notification.');
         }
-
-        /* // After sending the notification, update the status to 'sent'
-        await db.query('UPDATE notifications SET sms_status = ? WHERE id = ?', ['sent', notification.id]); */
       });
     } else {
       console.log('No notifications to send');
@@ -365,13 +373,25 @@ userWSS.on('connection', (ws, req) => {
   const ip = req.socket.remoteAddress.startsWith('::ffff:') ? req.socket.remoteAddress.slice(7) : req.socket.remoteAddress;
   console.log(`${ip} connected to /user WebSocket`);
 
+  const subprotocol = req.headers['sec-websocket-protocol'];
+  console.log('Subprotocol:', subprotocol); // This will show the subprotocol (e.g., "esp32_subprotocol")
+
+  // If subprotocol is "esp32_subprotocol", this is the ESP32 client
+  if (subprotocol === "esp32_subprotocol") {
+    esp32Client = ws;
+
+    // Start an interval to check notifications every 10 seconds for ESP32 client
+    if (notificationInterval) {
+      clearInterval(notificationInterval); // Clear any existing interval
+    }
+    notificationInterval = setInterval(() => {
+      console.log('Running periodic notification check for ESP32 client...');
+      checkNotifications(); // This will send notifications to the ESP32 client
+    }, 10000); // 10000 ms = 10 seconds
+  }
+
   // Add new client to the array
   userClients.push(ws);
-
-   // Start an interval for this specific WebSocket client
-   const notificationInterval = setInterval(() => {
-    checkNotifications(ws);
-  }, 10000); // 10000 ms = 10 seconds
 
   ws.on('message', message => {
     console.log(`[User] Received: ${message}`);
@@ -385,16 +405,29 @@ userWSS.on('connection', (ws, req) => {
 
   ws.on('close', () => {
     console.log(`${ip} disconnected from /user WebSocket`);
+    clearInterval(notificationInterval);
     // Remove client from the array
     const index = userClients.indexOf(ws);
     if (index > -1) {
       userClients.splice(index, 1);
     }
 
-    // Clear the interval for this client
-    clearInterval(notificationInterval);
+    // If ESP32 disconnected, reset esp32Client and clear the interval
+    if (ws === esp32Client) {
+      esp32Client = null;
+      if (notificationInterval) {
+        clearInterval(notificationInterval);  // Clear the interval when ESP32 disconnects
+        console.log('Stopped notification check interval for ESP32 client');
+      }
+    }
   });
 });
+
+// Set an interval to check notifications every 10 seconds
+setInterval(() => {
+  console.log('Running periodic notification check...');
+  checkNotifications();
+}, 10000); // 10000 ms = 10 seconds
 
 // Function to fetch logs from the database
 const fetchLogs = async () => {
