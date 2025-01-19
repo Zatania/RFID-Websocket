@@ -72,6 +72,14 @@ void setup() {
   } else {
     Serial.println("Failed to initialize GSM module.");
   }
+
+  // Set SMS to text mode
+  Serial2.println("AT+CMGF=1"); 
+  delay(100);
+  if (!Serial2.find("OK")) {
+    Serial.println("Failed to set text mode.");
+    return false; // Return failure
+  }
 }
 
 void loop() {
@@ -153,14 +161,6 @@ void webSocketEvent(WStype_t type, uint8_t * payload, size_t length) {
 
 bool sendSMS(const char* phoneNumber, const char* message) {
   Serial.println("Sending SMS...");
-
-  // Set SMS to text mode
-  Serial2.println("AT+CMGF=1"); 
-  delay(100);
-  if (!Serial2.find("OK")) {
-    Serial.println("Failed to set text mode.");
-    return false; // Return failure
-  }
 
   // Set recipient phone number
   Serial2.print("AT+CMGS=\"");
