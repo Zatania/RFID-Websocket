@@ -175,14 +175,18 @@ void webSocketEvent(WStype_t type, uint8_t * payload, size_t length) {
 bool sendSMS(const char* phoneNumber, const char* message) {
   Serial.println("Sending SMS...");
 
+  // Create a buffer to hold the new message with the prefix
+  String modifiedMessage = "PIYUCHECKPOINT: "; // Prefix text
+  modifiedMessage += message; // Append the original message
+
   // Set recipient phone number
-  Serial2.print("AT+CMGS=\"");
-  Serial2.print(phoneNumber);
+  Serial2.println("AT+CMGS=\"");
+  Serial2.println(phoneNumber);
   Serial2.println("\"");
   delay(100);
   
-  // Send the SMS message
-  Serial2.print(message);
+  // Send the SMS message with the prefix
+  Serial2.print(modifiedMessage);
   delay(100);
   
   // End the SMS with CTRL+Z (ASCII 26)
