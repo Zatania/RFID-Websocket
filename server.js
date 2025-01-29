@@ -573,37 +573,39 @@ const fetchParkedVehicles = async () => {
         hours >= 8 &&
         (vehicle.table_name === 'user_parking_history' || vehicle.table_name === 'visitor_parking_history')
       ) {
-        const updateQuery = `
-          UPDATE ${vehicle.table_name}
-          SET status = 'Overparked'
-          WHERE id = ? AND timestamp_out IS NULL
-        `
+        if (vehicle.status === 'Parked') {
+          const updateQuery = `
+            UPDATE ${vehicle.table_name}
+            SET status = 'Overparked'
+            WHERE id = ? AND timestamp_out IS NULL
+          `
 
-        // Execute the update query
-        await db.query(updateQuery, [vehicle.history_id])
+          // Execute the update query
+          await db.query(updateQuery, [vehicle.history_id])
 
-        // Add a violation for overparking
-        const violationNotes =
-          'User checked out after 8 hours. Violation added for overparking. Thank you for parking with us.'
-        await db.query('INSERT INTO violations (user_id, user_history_id, notes, status) VALUES (?, ?, ?, ?)', [
-          vehicle.userId,
-          vehicle.history_id,
-          violationNotes,
-          'Unresolved'
-        ])
+          // Add a violation for overparking
+          const violationNotes =
+            'User checked out after 8 hours. Violation added for overparking. Thank you for parking with us.'
+          await db.query('INSERT INTO violations (user_id, user_history_id, notes, status) VALUES (?, ?, ?, ?)', [
+            vehicle.userId,
+            vehicle.history_id,
+            violationNotes,
+            'Unresolved'
+          ])
 
-        // Add to notifications about violation
-        const [users] = await db.query('SELECT * FROM users WHERE id = ?', [vehicle.userId]);
-        const phone_number = users[0].phone_number
+          // Add to notifications about violation
+          const [users] = await db.query('SELECT * FROM users WHERE id = ?', [vehicle.userId]);
+          const phone_number = users[0].phone_number
 
-        const notifTitle = 'Late Time Out'
+          const notifTitle = 'Late Time Out'
 
-        const notifMessage =
-          'You checked out way past 8 hours. A violation has been added to your account. Thank you for parking with us.'
-        await db.query(
-          'INSERT INTO notifications (phone_number, title, message, status, sms_status) VALUES (?, ?, ?, ?, ?)',
-          [phone_number, notifTitle, notifMessage, 'unread', 'pending']
-        )
+          const notifMessage =
+            'You checked out way past 8 hours. A violation has been added to your account. Thank you for parking with us.'
+          await db.query(
+            'INSERT INTO notifications (phone_number, title, message, status, sms_status) VALUES (?, ?, ?, ?, ?)',
+            [phone_number, notifTitle, notifMessage, 'unread', 'pending']
+          )
+        }
       } else if (
         hours < 8 &&
         (vehicle.table_name === 'user_parking_history' ||
