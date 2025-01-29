@@ -579,7 +579,6 @@ const fetchParkedVehicles = async () => {
         // Execute the update query
         await db.query(updateQuery, [vehicle.history_id])
 
-        // Add violation for overparked
         // Add a violation for overparking
         const violationNotes =
           'User checked out after 8 hours. Violation added for overparking. Thank you for parking with us.'
