@@ -578,6 +578,27 @@ const fetchParkedVehicles = async () => {
 
         // Execute the update query
         await db.query(updateQuery, [vehicle.history_id])
+
+        // Add violation for overparked
+        // Add a violation for overparking
+        const violationNotes =
+          'User checked out after 8 hours. Violation added for overparking. Thank you for parking with us.'
+        await db.query('INSERT INTO violations (user_id, user_history_id, notes, status) VALUES (?, ?, ?, ?)', [
+          userId,
+          historyId,
+          violationNotes,
+          'Unresolved'
+        ])
+
+        // Add to notifications about violation
+        const notifTitle = 'Late Time Out'
+
+        const notifMessage =
+          'You checked out way past 8 hours. A violation has been added to your account. Thank you for parking with us.'
+        await db.query(
+          'INSERT INTO notifications (phone_number, title, message, status, sms_status) VALUES (?, ?, ?, ?, ?)',
+          [phone_number, notifTitle, notifMessage, 'unread', 'pending']
+        )
       } else if (
         hours < 8 &&
         (vehicle.table_name === 'user_parking_history' ||
