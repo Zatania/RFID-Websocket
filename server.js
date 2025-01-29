@@ -509,6 +509,7 @@ const fetchParkedVehicles = async () => {
     const query = `
       SELECT
         ph.id AS history_id,
+        users.id AS userId,
         'user_parking_history' AS table_name,
         CONCAT(users.first_name, ' ', users.last_name) AS full_name,
         vehicles.plate_number AS plate_number,
@@ -583,13 +584,16 @@ const fetchParkedVehicles = async () => {
         const violationNotes =
           'User checked out after 8 hours. Violation added for overparking. Thank you for parking with us.'
         await db.query('INSERT INTO violations (user_id, user_history_id, notes, status) VALUES (?, ?, ?, ?)', [
-          userId,
-          historyId,
+          vehicle.userId,
+          vehicle.history_id,
           violationNotes,
           'Unresolved'
         ])
 
         // Add to notifications about violation
+        const [users] = await db.query('SELECT * FROM users WHERE id = ?', [vehicle.userId]);
+        const phone_number = users[0].phone_number
+
         const notifTitle = 'Late Time Out'
 
         const notifMessage =
