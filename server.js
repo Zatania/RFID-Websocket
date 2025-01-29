@@ -525,6 +525,7 @@ const fetchParkedVehicles = async () => {
 
       SELECT
         ph.id AS history_id,
+        premiums.id AS userId,
         'premium_parking_history' AS table_name,
         CONCAT(premiums.first_name, ' ', premiums.last_name) AS full_name,
         vehicles.plate_number AS plate_number,
@@ -540,6 +541,7 @@ const fetchParkedVehicles = async () => {
 
       SELECT
         ph.id AS history_id,
+        visitors.id AS userId,
         'visitor_parking_history' AS table_name,
         CONCAT(visitors.first_name, ' ', visitors.last_name) AS full_name,
         visitors.vehicle_plate_number AS plate_number,
