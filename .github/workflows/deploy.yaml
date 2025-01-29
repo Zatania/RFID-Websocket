@@ -1,0 +1,39 @@
+name: Deploy to Vultr
+
+on:
+  push:
+    branches:
+      - main
+
+concurrency:
+  group: deploy-to-vultr
+  cancel-in-progress: true # Optional: Cancels any in-progress runs when a new push occurs
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      # Checkout the repository
+      - name: Checkout Repository
+        uses: actions/checkout@v3
+
+      # Set up SSH key for accessing Vultr server
+      - name: Set up SSH Key
+        uses: webfactory/ssh-agent@v0.5.3
+        with:
+          ssh-private-key: ${{ secrets.VULTR_SSH_PRIVATE_KEY }}
+
+      # Deploy to Vultr Server
+      - name: Deploy to Vultr Server
+        run: |
+          ssh -o StrictHostKeyChecking=no admin@${{ secrets.VULTR_SERVER_IP }} << 'EOF'
+            export NVM_DIR=~/.nvm
+            source ~/.nvm/nvm.sh
+            export PATH="$PATH:`yarn global bin`"
+            bash -l
+            cd RFID-Websocket || exit 1
+            git pull origin main || exit 1
+            npm install || exit 1  # Install dependencies on the Vultr server
+            pm2 restart piyucheckpoint-websocket || exit 1  # Restart the app using PM2
+          EOF
