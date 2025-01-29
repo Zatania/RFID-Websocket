@@ -597,7 +597,7 @@ const fetchParkedVehicles = async () => {
           const [users] = await db.query('SELECT * FROM users WHERE id = ?', [vehicle.userId]);
           const phone_number = users[0].phone_number
 
-          const notifTitle = 'Late Time Out'
+          const notifTitle = 'Overparked Violation'
 
           const notifMessage =
             'You checked out way past 8 hours. A violation has been added to your account. Thank you for parking with us.'
