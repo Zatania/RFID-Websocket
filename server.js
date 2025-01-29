@@ -585,7 +585,7 @@ const fetchParkedVehicles = async () => {
 
           // Add a violation for overparking
           const violationNotes =
-            'User checked out after 8 hours. Violation added for overparking. Thank you for parking with us.'
+            'User have parked for 8 hours or more. Violation added for overparking. Thank you for parking with us.'
           await db.query('INSERT INTO violations (user_id, user_history_id, notes, status) VALUES (?, ?, ?, ?)', [
             vehicle.userId,
             vehicle.history_id,
@@ -600,7 +600,7 @@ const fetchParkedVehicles = async () => {
           const notifTitle = 'Overparked Violation'
 
           const notifMessage =
-            'You checked out way past 8 hours. A violation has been added to your account. Thank you for parking with us.'
+            'You have parked for 8 hours or more. A violation has been added to your account. Thank you for parking with us.'
           await db.query(
             'INSERT INTO notifications (phone_number, title, message, status, sms_status) VALUES (?, ?, ?, ?, ?)',
             [phone_number, notifTitle, notifMessage, 'unread', 'pending']
