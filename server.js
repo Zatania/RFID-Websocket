@@ -35,10 +35,10 @@ let isCheckingNotifications = false; // Flag to track if notifications are being
 const checkNotifications = async () => {
   if (isCheckingNotifications) {
     console.log('Notification check is already in progress, skipping this check...');
-    return; // Skip if the check is already in progress
+    return;
   }
 
-  isCheckingNotifications = true; // Set flag to indicate the check is in progress
+  isCheckingNotifications = true;
   console.log('Checking notifications every 10 seconds...');
 
   try {
@@ -47,17 +47,14 @@ const checkNotifications = async () => {
     if (notifications.length > 0) {
       console.log('Sending notifications to ESP32');
 
-      // Process each notification one by one
       for (let notification of notifications) {
-        // Construct the notification message
         const notif = {
           phone_number: notification.phone_number,
           message: notification.message,
-          notification_id: notification.id, // Unique ID
-          type: "sms" // Specify this is an SMS notification
+          notification_id: notification.id,
+          type: "sms"
         };
 
-        // Skip sending if already marked as sent
         if (notification.sms_status === "sent") {
           console.log(`Skipping already processed notification: ${notification.id}`);
           continue;
@@ -66,38 +63,44 @@ const checkNotifications = async () => {
         console.log(`Sending notification: ${JSON.stringify(notif)}`);
 
         if (esp32Client && esp32Client.readyState === WebSocket.OPEN) {
-          // Send the notification to the ESP32 only
-          esp32Client.send(JSON.stringify(notif));
+          try {
+            esp32Client.send(JSON.stringify(notif));
 
-          // Listen for WebSocket message asynchronously
-          await new Promise((resolve, reject) => {
-            esp32Client.once('message', async (message) => {
-              try {
-                const response = JSON.parse(message);
-                if (response.type === "sms" && response.notification_id === notification.id) {
-                  // Process SMS response
-                  if (response.status === 'success') {
-                    console.log(`Notification sent successfully: ${notif.phone_number}`);
-                    // Update the status to 'sent'
-                    await db.query('UPDATE notifications SET sms_status = ? WHERE id = ?', ['sent', notification.id]);
-                  } else if (response.status === 'error') {
-                    console.error(`Failed to send notification to ${notif.phone_number}: ${response.message}`);
-                    // Update the status to 'error' to retry
-                    await db.query('UPDATE notifications SET sms_status = ? WHERE id = ?', ['error', notification.id]);
+            // Wait for response with a timeout
+            await new Promise((resolve, reject) => {
+              const timeout = setTimeout(() => {
+                reject(new Error('Response timeout after 10 seconds'));
+              }, 10000); // 10 seconds timeout
+
+              esp32Client.once('message', async (message) => {
+                clearTimeout(timeout); // Clear the timeout on response
+                try {
+                  const response = JSON.parse(message);
+                  if (response.type === "sms" && response.notification_id === notification.id) {
+                    if (response.status === 'success') {
+                      console.log(`Notification sent successfully: ${notif.phone_number}`);
+                      await db.query('UPDATE notifications SET sms_status = ? WHERE id = ?', ['sent', notification.id]);
+                    } else if (response.status === 'error') {
+                      console.error(`Failed to send notification to ${notif.phone_number}: ${response.message}`);
+                      await db.query('UPDATE notifications SET sms_status = ? WHERE id = ?', ['error', notification.id]);
+                    }
+                    resolve();
+                  } else {
+                    reject(new Error('Notification ID mismatch or unexpected response type'));
                   }
-                  resolve(); // Resolve after processing the response
-                } else {
-                  console.error('Notification ID mismatch or unexpected response type');
-                  reject(new Error('Notification ID mismatch or unexpected response type'));
+                } catch (err) {
+                  reject(err);
                 }
-              } catch (err) {
-                console.error('Error processing WebSocket message:', err);
-                reject(err); // Reject on error
-              }
+              });
             });
-          });
+          } catch (error) {
+            console.error(`Failed to process notification ${notification.id}:`, error);
+            await db.query('UPDATE notifications SET sms_status = ? WHERE id = ?', ['error', notification.id]);
+          }
         } else {
           console.log('ESP32 client is not connected. Skipping notification.');
+          // Optionally update status to 'error' if needed
+          await db.query('UPDATE notifications SET sms_status = ? WHERE id = ?', ['error', notification.id]);
         }
       }
     } else {
@@ -107,11 +110,8 @@ const checkNotifications = async () => {
     console.error('Error checking notifications:', error);
   }
 
-  isCheckingNotifications = false; // Reset the flag when done
+  isCheckingNotifications = false; // Ensure flag is reset
 };
-
-
-
 
 // Function to check if 'premiums' table 'end_date' is today then update 'status' to 'Expired' and insert into notifications table
 const checkPremiumStatus = async () => {
