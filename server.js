@@ -203,9 +203,9 @@ const checkVehicleStatuses = async () => {
     for (const vehicle of vehicles) {
       const expirationDate = new Date(vehicle.registration_expiration);
       const timeDiff = expirationDate - currentDate;
-      let newStatus;
+      const newStatus = timeDiff <= 0 ? 'Expired' : 'Active';
 
-      // Determine new status based on time difference
+      /* // Determine new status based on time difference
       if (timeDiff <= 3 * 24 * 60 * 60 * 1000 && timeDiff > 24 * 60 * 60 * 1000) { // 3 days to 1 day
         newStatus = 'Expiring Soon';
       } else if (timeDiff <= 24 * 60 * 60 * 1000 && timeDiff > 0) { // 1 day to 0 days
@@ -214,7 +214,7 @@ const checkVehicleStatuses = async () => {
         newStatus = 'Expired';
       } else {
         newStatus = 'Registered';
-      }
+      } */
 
       // Update status only if it's different from the current status
       if (vehicle.status !== newStatus) {
@@ -222,7 +222,7 @@ const checkVehicleStatuses = async () => {
         await db.query('UPDATE vehicles SET status = ? WHERE id = ?', [newStatus, vehicle.id]);
       }
 
-      // Handle notifications for expiring or expired vehicles
+      /* // Handle notifications for expiring or expired vehicles
       if (['Expiring Soon', 'Expiring Today', 'Expired'].includes(newStatus)) {
         let user = null;
 
@@ -231,7 +231,7 @@ const checkVehicleStatuses = async () => {
           const [users] = await db.query('SELECT * FROM users WHERE id = ?', [vehicle.user_id]);
           if (users.length > 0) user = users[0];
         } else if (vehicle.premium_id) {
-          const [premiums] = await db.query('SELECT * FROM premium_users WHERE id = ?', [vehicle.premium_id]);
+          const [premiums] = await db.query('SELECT * FROM premiums WHERE id = ?', [vehicle.premium_id]);
           if (premiums.length > 0) user = premiums[0];
         }
 
@@ -265,12 +265,67 @@ const checkVehicleStatuses = async () => {
         } else {
           console.log('No user or premium user associated with vehicle');
         }
+      } */
+
+      // Retrieve associated user
+      let user = null;
+      if (vehicle.user_id) {
+        const [users] = await db.query('SELECT * FROM users WHERE id = ?', [vehicle.user_id]);
+        user = users[0];
+      } else if (vehicle.premium_id) {
+        const [premiums] = await db.query('SELECT * FROM premiums WHERE id = ?', [vehicle.premium_id]);
+        user = premiums[0];
+      }
+
+      if (!user) {
+        console.log('No user associated with vehicle');
+        continue;
+      }
+
+      const phone_number = user.phone_number;
+
+      // Handle notifications
+      if (newStatus === 'Active') {
+        const daysUntilExpiration = Math.ceil(timeDiff / (1000 * 60 * 60 * 24));
+        
+        // Send daily reminders starting 14 days before expiration
+        if (daysUntilExpiration <= 14 && daysUntilExpiration >= 1) {
+          const [existingNotifications] = await db.query(
+            `SELECT id FROM notifications 
+             WHERE phone_number = ? 
+             AND title = ? 
+             AND DATE(created_at) = CURDATE()`,
+            [phone_number, 'Vehicle Registration Expiry Reminder']
+          );
+
+          if (existingNotifications.length === 0) {
+            const message = `Your vehicle with plate number (${vehicle.plate_number}) will expire in ${daysUntilExpiration} ${daysUntilExpiration === 1 ? 'day' : 'days'}. Renew now.`;
+            
+            await db.query(
+              'INSERT INTO notifications (phone_number, title, message, sms_status) VALUES (?, ?, ?, ?)',
+              [phone_number, 'Vehicle Registration Expiry Reminder', message, 'pending']
+            );
+            console.log(`Reminder sent to ${phone_number}: ${message}`);
+          }
+        }
+      } 
+      // Send expiration notification only on status change
+      else if (newStatus === 'Expired' && vehicle.status !== 'Expired') {
+        const message = `Your vehicle with plate number (${vehicle.plate_number}) registration has expired. Renew immediately.`;
+        await db.query(
+          'INSERT INTO notifications (phone_number, title, message, sms_status) VALUES (?, ?, ?, ?)',
+          [phone_number, 'Vehicle Registration Expired', message, 'pending']
+        );
+        console.log(`Expiration alert sent to ${phone_number}: ${message}`);
       }
     }
   } catch (error) {
     console.error('Error checking vehicle statuses:', error);
   }
 };
+
+// Test checkVehicleStatuses function every second
+/* setInterval(() => checkVehicleStatuses(), 1000); */
 
 // Function to check driver's license expiration
 const checkDriverLicense = async () => {
@@ -334,7 +389,7 @@ const checkDriverLicense = async () => {
           console.log('No user associated with driver license');
         }
       } else if (license.premium_id) {
-        const [premiums] = await db.query('SELECT * FROM premium_users WHERE id = ?', [license.premium_id]);
+        const [premiums] = await db.query('SELECT * FROM premiums WHERE id = ?', [license.premium_id]);
         if (premiums.length > 0) {
           const phone_number = premiums[0].phone_number;
           const messages = {
