@@ -343,11 +343,11 @@ const checkDriverLicense = async () => {
       let status;
 
       // Determine new status based on time difference
-      if (timeDiff <= 3 * 24 * 60 * 60 * 1000 && timeDiff > 24 * 60 * 60 * 1000) {
+      if (timeDiff <= 98 * 24 * 60 * 60 * 1000 && timeDiff > 24 * 60 * 60 * 1000) { // 98 days to 25 days
         status = 'Expiring Soon';
-      } else if (timeDiff <= 24 * 60 * 60 * 1000 && timeDiff > 0) {
-        status = 'Expiring Today';
-      } else if (timeDiff <= 0) {
+      } else if (timeDiff <= 24 * 60 * 60 * 1000 && timeDiff > 0) { // 24 hours to 0 days
+        status = 'Expiring Tomorrow';
+      } else if (timeDiff <= 0) { // 0 days
         status = 'Expired';
       } else {
         status = 'Valid';
@@ -359,7 +359,49 @@ const checkDriverLicense = async () => {
         continue;
       }
 
+      const messages = {
+        'Expiring Soon': `Your driver's license is expiring soon. Please renew your license.`,
+        'Expiring Tomorrow': `Your driver's license is expiring tomorrow. Please renew your license.`,
+        'Expired': `Your driver's license has expired. Please renew your license.`,
+      };
+
+      let phone_number = null;
+
       if (license.user_id) {
+        const [users] = await db.query('SELECT * FROM users WHERE id = ?', [license.user_id]);
+        if (users.length > 0) {
+          phone_number = users[0].phone_number;
+        }
+      } else if (license.premium_id) {
+        const [premiums] = await db.query('SELECT * FROM premiums WHERE id = ?', [license.premium_id]);
+        if (premiums.length > 0) {
+          phone_number = premiums[0].phone_number;
+        }
+      }
+
+      if (phone_number) {
+        // Check if a notification was already sent today
+        const [existingNotifications] = await db.query(
+          `SELECT * FROM notifications 
+           WHERE phone_number = ? 
+           AND DATE(created_at) = CURDATE()`,
+          [phone_number]
+        );
+
+        if (existingNotifications.length === 0) {
+          await db.query(
+            'INSERT INTO notifications (phone_number, title, message, sms_status) VALUES (?, ?, ?, ?)',
+            [phone_number, 'Driver License Expiry', messages[status], 'pending']
+          );
+          console.log(`Notification sent to ${phone_number} for status: ${status}`);
+        } else {
+          console.log(`Notification already sent to ${phone_number} today. Skipping.`);
+        }
+      } else {
+        console.log('No associated user or premium account for driver license');
+      }
+
+      /* if (license.user_id) {
         const [users] = await db.query('SELECT * FROM users WHERE id = ?', [license.user_id]);
         if (users.length > 0) {
           const phone_number = users[0].phone_number;
@@ -417,12 +459,15 @@ const checkDriverLicense = async () => {
         } else {
           console.log('No premium user associated with driver license');
         }
-      }
+      } */
     }
   } catch (error) {
     console.error('Error checking driver license statuses:', error);
   }
 };
+
+// Test checkDriverLicense function every second
+setInterval(() => checkDriverLicense(), 1000);
 
 // Schedule the task to run every 8 hours
 schedule.scheduleJob('0 */8 * * *', () => {
