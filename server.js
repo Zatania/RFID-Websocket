@@ -155,6 +155,33 @@ const checkPremiumStatus = async () => {
 
         console.log(`Notification sent to ${phone_number} for premium status: ${newStatus}`);
       }
+
+      // Handle notifications for premiums expiring in 14 days
+      if (newStatus === 'Active') {
+        const daysUntilExpiration = Math.ceil(timeDiff / (1000 * 60 * 60 * 24)); // Convert ms to days
+
+        if (daysUntilExpiration <= 14 && daysUntilExpiration >= 1) {
+          console.log(`Premium user ${premium.id} will expire in ${daysUntilExpiration} days`);
+          const phone_number = premium.phone_number;
+          
+          // Check if a reminder was already sent today
+          const [existingNotifications] = await db.query(
+            'SELECT id FROM notifications WHERE phone_number = ? AND title = ? AND DATE(created_at) = CURDATE()',
+            [phone_number, 'Premium Subscription Expiry Reminder']
+          );
+
+          if (existingNotifications.length === 0) {
+            const message = `Your premium subscription will expire in ${daysUntilExpiration} ${daysUntilExpiration === 1 ? 'day' : 'days'}. Please renew to keep your benefits.`;
+            
+            await db.query(
+              'INSERT INTO notifications (phone_number, title, message, sms_status) VALUES (?, ?, ?, ?)',
+              [phone_number, 'Premium Subscription Expiry Reminder', message, 'pending']
+            );
+            
+            console.log(`Reminder sent to ${phone_number}: ${message}`);
+          }
+        }
+      }
     }
   } catch (error) {
     console.error('Error checking premium statuses:', error);
@@ -162,7 +189,7 @@ const checkPremiumStatus = async () => {
 };
 
 // Test CheckPremiumStatus function every second
-// setInterval(() => checkPremiumStatus(), 1000);
+/* setInterval(() => checkPremiumStatus(), 1000); */
 
 // Function to check vehicle statuses
 const checkVehicleStatuses = async () => {
@@ -179,9 +206,9 @@ const checkVehicleStatuses = async () => {
       let newStatus;
 
       // Determine new status based on time difference
-      if (timeDiff <= 3 * 24 * 60 * 60 * 1000 && timeDiff > 24 * 60 * 60 * 1000) {
+      if (timeDiff <= 3 * 24 * 60 * 60 * 1000 && timeDiff > 24 * 60 * 60 * 1000) { // 3 days to 1 day
         newStatus = 'Expiring Soon';
-      } else if (timeDiff <= 24 * 60 * 60 * 1000 && timeDiff > 0) {
+      } else if (timeDiff <= 24 * 60 * 60 * 1000 && timeDiff > 0) { // 1 day to 0 days
         newStatus = 'Expiring Today';
       } else if (timeDiff <= 0) {
         newStatus = 'Expired';
