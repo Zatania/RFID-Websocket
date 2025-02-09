@@ -467,7 +467,7 @@ const checkDriverLicense = async () => {
 };
 
 // Test checkDriverLicense function every second
-setInterval(() => checkDriverLicense(), 1000);
+/* setInterval(() => checkDriverLicense(), 1000); */
 
 // Schedule the task to run every 8 hours
 schedule.scheduleJob('0 */8 * * *', () => {
